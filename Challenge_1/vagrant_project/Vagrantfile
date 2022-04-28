@@ -1,0 +1,52 @@
+#domain_fqdn = "auror.local"
+#domain_netbios= "auror"
+#dc_ip = "195.0.0.2"
+#machine_2_ip = "195.0.0.3"
+#gateway_ip = "195.0.0.1"
+#domain_safemode_password = "Testertest@123"
+Vagrant.configure("2") do |config|
+  config.vm.communicator = "winrm"
+  #config.winrm.username = "vagrant"
+  #config.winrm.password = "vagrant"
+  config.winrm.transport = :plaintext
+  config.winrm.basic_auth_only = true
+  config.vm.define "dc" do |dc|
+    dc.vm.box = "..\\packer_project\\windows_2022_virtualbox.box"
+    dc.vm.network "private_network", ip: "195.0.0.2"
+    dc.vm.provider "virtualbox" do |v|
+      v.gui = true
+      v.name = "dc"
+      v.linked_clone = true
+    end
+    dc.vm.provision "shell", path: "provisioning_scripts/Change-Hostname.ps1", privileged: true, args: "-password vagrant -user vagrant -hostname Machine-A-dc"
+    dc.vm.provision "shell", reboot: true
+    dc.vm.provision "shell", inline: "Write-Host -ForegroundColor Green Setting_Administrator_password.. ; net user Administrator Testertest@123"
+    dc.vm.provision "shell", inline: "Write-Host -ForegroundColor Green Stopping_Win_Updates ; stop-service wuauserv ; set-service wuauserv -startup disabled ; Write-Output Stooped_Updates"
+    dc.vm.provision "shell", inline: "Remove-WindowsFeature Windows-Defender"
+    dc.vm.provision "shell", inline: "Write-Host -ForegroundColor Green Installing ad-domain-services ; install-windowsfeature -name 'ad-domain-services' -includemanagementtools"
+    dc.vm.provision "shell", path: "provisioning_scripts/Install-ADDSForest.ps1", privileged: true, args: "-domainName auror.local -domainNetbiosName auror -safeModePass 'Testertest@123'"
+    dc.vm.provision "shell", reboot: true
+    dc.vm.provision "shell", path: "provisioning_scripts/New-ADUser.ps1", privileged: true, args: "-Password Pass@123 -user Adam"
+    #dc.vm.provision "shell", path: "provision/ps.ps1", args: "domain-controller-wait-for-ready.ps1"
+  end
+  config.vm.define "m2" do |m2|
+    m2.vm.box = "..\\packer_project\\windows_2022_virtualbox.box"
+    m2.vm.network "private_network", ip: "195.0.0.3"
+    m2.vm.provider "virtualbox" do |v|
+      v.gui = true
+      v.name = "m2"
+      v.linked_clone = true
+    end
+    #m2.vm.provision "shell", inline: "whoami /groups" #checking proccess integrity level
+    #m2.vm.provision "shell", inline: "Write-Host 'C:\\vagrant\\googlechromestandaloneenterprise64.msi'" # checking character escaping for \
+    m2.vm.provision "shell", path: "provisioning_scripts/Change-Hostname.ps1", privileged: true, args: "-password vagrant -user vagrant -hostname Machine-B"
+    m2.vm.provision "shell", reboot: true
+    m2.vm.provision "shell", inline: "foreach ($c in Get-NetAdapter) { write-host 'Setting DNS for' $c.interfaceName ; Set-DnsClientServerAddress -InterfaceIndex $c.interfaceindex -ServerAddresses ('195.0.0.2', '195.0.0.2') }"
+    m2.vm.provision "shell", inline: "Write-Host -ForegroundColor Green Disabling_Firewall... ; Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False" , privileged: true
+    m2.vm.provision "shell", path: "provisioning_scripts/join-domain.ps1", privileged: true, args: "-Password Testertest@123 -user Administrator -domain auror.local"
+    m2.vm.provision "shell", reboot: true
+    m2.vm.provision "shell", inline: "Write-Host -ForegroundColor Green Adding_Adam_to_local_admin_group... ; Add-LocalGroupMember -Group Administrators -Member 'auror.local\\Adam'", privileged: true
+    m2.vm.provision "shell", inline: "Write-Host -ForegroundColor Green Installing chrome... ; msiexec /i 'C:\\vagrant\\googlechromestandaloneenterprise64.msi' /quiet /qf", privileged: true
+    m2.vm.provision "shell", inline: "Start-Sleep -s 200"
+  end
+end
