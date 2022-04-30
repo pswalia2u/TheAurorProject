@@ -1,5 +1,5 @@
 # TheAurorProject
-Automate Ad lab deployment
+Challenge 1: Automate Ad lab deployment
 https://pswalia2u.medium.com/automate-active-directory-installation-packer-provisioning-vagrant-e5b059d8fda
 
 References-
